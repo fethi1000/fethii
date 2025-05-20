@@ -17,16 +17,24 @@ HTML_TEMPLATE = """
   body, html { margin:0; padding:0; height:100%; font-family: Arial, sans-serif; }
   #map { height:100vh; width:100%; }
   #control-panel, #device-names-panel {
-      position: absolute; top: 60px; z-index: 1100;
+      position: absolute; 
+      top: 60px; 
+      z-index: 1100;
       background: rgba(255,255,255,0.97);
-      padding: 15px; border-radius: 8px;
+      padding: 15px; 
+      border-radius: 8px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-      width: 300px; display: none;
+      width: 260px; 
+      display: none;
       max-height: 80vh;
       overflow-y: auto;
   }
-  #control-panel { right: 10px; }
-  #device-names-panel { right: 320px; }
+  #control-panel { 
+      right: 280px; /* تم تعديله ليكون على اليسار مع مسافة من لوحة الأسماء */
+  }
+  #device-names-panel { 
+      right: 10px; /* تم تعديله ليكون في أقصى اليمين */
+  }
   .device-label {
       font-weight: bold;
       padding: 2px 8px;
@@ -72,21 +80,6 @@ HTML_TEMPLATE = """
       border-radius: 8px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.2);
       width: 260px;
-  }
-  #control-panel h2 {
-      margin-top: 0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-  }
-  #control-panel h2 button {
-      background: #dc3545;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      padding: 4px 8px;
-      cursor: pointer;
-      font-size: 14px;
   }
   .device-list-item {
       padding: 8px;
@@ -137,10 +130,6 @@ HTML_TEMPLATE = """
         إدارة الأجهزة
         <button id="close-control">إغلاق</button>
     </h2>
-
-    <h3>الأجهزة الحالية</h3>
-    <div id="device-manage-list" style="max-height: 200px; overflow-y: auto; border: 1px solid #ccc; padding: 5px; margin-bottom: 15px;"></div>
-
     <div id="device-list"></div>
     <div id="rename-form">
         <h3>تغيير اسم الجهاز:</h3>
@@ -164,8 +153,6 @@ HTML_TEMPLATE = """
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-    const INACTIVE_THRESHOLD_SECONDS = 60;
-
     let map;
     const deviceMarkers = {};
     const deviceLabels = {};
@@ -180,8 +167,6 @@ HTML_TEMPLATE = """
         fetch('/get_devices')
             .then(response => response.json())
             .then(devices => {
-                const now = new Date();
-
                 // إزالة علامات الأجهزة التي لم تعد موجودة
                 for (const deviceId in deviceMarkers) {
                     if (!devices[deviceId]) {
@@ -192,88 +177,35 @@ HTML_TEMPLATE = """
                     }
                 }
 
-                updateDeviceManageList(devices);
                 updateDeviceList(devices);
                 updateDeviceNamesList(devices);
 
                 for (const [deviceId, deviceData] of Object.entries(devices)) {
                     if (deviceData.lat && deviceData.lon) {
                         const displayName = deviceData.custom_name || deviceId;
-
-                        let isActive = true;
-                        if (deviceData.last_update) {
-                            const lastUpdate = new Date(deviceData.last_update);
-                            const diffSeconds = (now - lastUpdate) / 1000;
-                            if (diffSeconds > INACTIVE_THRESHOLD_SECONDS) {
-                                isActive = false;
-                            }
-                        }
-
-                        const bgColor = isActive ? '#007bff' : '#888';
-
-                        const iconHtml = `<div class="device-label" style="background-color: ${bgColor};">${displayName}</div>`;
-                        const icon = L.divIcon({
-                            className: '',
-                            html: iconHtml,
-                            iconAnchor: [40, 28],  // منتصف العرض وأسفل المستطيل
-                            popupAnchor: [0, 10]
-                        });
-
+                        
                         if (!deviceMarkers[deviceId]) {
                             deviceMarkers[deviceId] = L.marker([deviceData.lat, deviceData.lon])
                                 .addTo(map)
                                 .bindPopup(`<b>${displayName}</b><br>الإحداثيات: ${deviceData.lat}, ${deviceData.lon}`);
-
-                            deviceLabels[deviceId] = L.marker([deviceData.lat, deviceData.lon], { icon }).addTo(map);
+                            
+                            deviceLabels[deviceId] = L.marker([deviceData.lat, deviceData.lon], {
+                                icon: L.divIcon({
+                                    className: 'device-label',
+                                    html: displayName,
+                                    iconSize: [70, 18]
+                                })
+                            }).addTo(map);
                         } else {
                             deviceMarkers[deviceId].setLatLng([deviceData.lat, deviceData.lon]);
                             deviceMarkers[deviceId].getPopup().setContent(`<b>${displayName}</b><br>الإحداثيات: ${deviceData.lat}, ${deviceData.lon}`);
                             deviceLabels[deviceId].setLatLng([deviceData.lat, deviceData.lon]);
-                            deviceLabels[deviceId].setIcon(icon);
+                            const labelEl = deviceLabels[deviceId].getElement();
+                            if (labelEl) labelEl.innerHTML = displayName;
                         }
                     }
                 }
             });
-    }
-
-    function updateDeviceManageList(devices) {
-        const manageList = document.getElementById('device-manage-list');
-        manageList.innerHTML = '';
-        for (const [deviceId, deviceData] of Object.entries(devices)) {
-            const displayName = deviceData.custom_name || deviceId;
-            const item = document.createElement('div');
-            item.className = 'device-list-item';
-
-            const nameSpan = document.createElement('span');
-            nameSpan.textContent = displayName;
-
-            const delBtn = document.createElement('button');
-            delBtn.textContent = 'حذف';
-            delBtn.className = 'delete-btn';
-
-            delBtn.onclick = () => {
-                if (confirm(`هل تريد حذف الجهاز "${displayName}" من الخريطة؟`)) {
-                    fetch('/delete_device', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ device_id: deviceId })
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.success) {
-                            alert('تم حذف الجهاز بنجاح');
-                            updateDevices();
-                        } else {
-                            alert('حدث خطأ أثناء الحذف');
-                        }
-                    });
-                }
-            };
-
-            item.appendChild(nameSpan);
-            item.appendChild(delBtn);
-            manageList.appendChild(item);
-        }
     }
 
     function updateDeviceList(devices) {
@@ -281,29 +213,21 @@ HTML_TEMPLATE = """
         const deviceSelect = document.getElementById('device-select');
         deviceList.innerHTML = '';
         deviceSelect.innerHTML = '<option value="">اختر جهازاً</option>';
-        const now = new Date();
-
+        
         for (const [deviceId, deviceData] of Object.entries(devices)) {
             const displayName = deviceData.custom_name || deviceId;
-
-            let isActive = true;
-            if (deviceData.last_update) {
-                const lastUpdate = new Date(deviceData.last_update);
-                const diffSeconds = (now - lastUpdate) / 1000;
-                if (diffSeconds > INACTIVE_THRESHOLD_SECONDS) {
-                    isActive = false;
-                }
-            }
-
+            
             const item = document.createElement('div');
-            item.textContent = displayName + (isActive ? '' : ' (غير نشط)');
-            item.className = 'device-list-item' + (isActive ? '' : ' inactive');
+            item.textContent = displayName;
+            item.style.padding = '8px';
+            item.style.cursor = 'pointer';
+            item.style.borderBottom = '1px solid #eee';
             item.onclick = () => {
                 map.setView([deviceData.lat, deviceData.lon], 18);
                 if (deviceMarkers[deviceId]) deviceMarkers[deviceId].openPopup();
             };
             deviceList.appendChild(item);
-
+            
             const option = document.createElement('option');
             option.value = deviceId;
             option.textContent = displayName;
@@ -314,30 +238,17 @@ HTML_TEMPLATE = """
     function updateDeviceNamesList(devices) {
         const deviceNamesList = document.getElementById('device-names-list');
         deviceNamesList.innerHTML = '';
-        const now = new Date();
-
+        
         for (const [deviceId, deviceData] of Object.entries(devices)) {
             const displayName = deviceData.custom_name || deviceId;
-
-            let isActive = true;
-            if (deviceData.last_update) {
-                const lastUpdate = new Date(deviceData.last_update);
-                const diffSeconds = (now - lastUpdate) / 1000;
-                if (diffSeconds > INACTIVE_THRESHOLD_SECONDS) {
-                    isActive = false;
-                }
-            }
-
+            
             const item = document.createElement('div');
-            item.textContent = displayName + (isActive ? '' : ' (غير نشط)');
+            item.textContent = displayName;
             item.style.padding = '7px 0';
             item.style.borderBottom = '1px solid #eee';
-            if (!isActive) {
-                item.style.color = '#888';
-                item.style.fontStyle = 'italic';
-            }
             deviceNamesList.appendChild(item);
         }
+        
         if (Object.keys(devices).length === 0) {
             deviceNamesList.innerHTML = '<div style="color:#888;text-align:center;">لا توجد أجهزة</div>';
         }
@@ -468,16 +379,6 @@ def rename_device():
     except Exception as e:
         print(f"خطأ في تغيير الاسم: {str(e)}")
         return jsonify({'success': False, 'message': 'حدث خطأ في الخادم'}), 500
-
-@app.route('/delete_device', methods=['POST'])
-def delete_device():
-    data = request.get_json()
-    device_id = data.get('device_id')
-    if device_id in devices:
-        del devices[device_id]
-        print(f"تم حذف الجهاز {device_id}")
-        return jsonify({'success': True})
-    return jsonify({'success': False, 'message': 'الجهاز غير موجود'})
 
 @app.route('/get_devices', methods=['GET'])
 def get_devices():
