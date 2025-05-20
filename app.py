@@ -1,9 +1,11 @@
 from flask import Flask, request, render_template_string, jsonify
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
+# تغيير وقت انتهاء صلاحية الإشارة إلى دقيقة واحدة
+INACTIVE_THRESHOLD = timedelta(minutes=1)
 devices = defaultdict(lambda: {'custom_name': None, 'last_update': None})
 
 HTML_TEMPLATE = """
@@ -19,6 +21,7 @@ HTML_TEMPLATE = """
   #control-panel, #device-names-panel {
       position: absolute; 
       top: 60px; 
+      right: 10px;
       z-index: 1100;
       background: rgba(255,255,255,0.97);
       padding: 15px; 
@@ -29,15 +32,9 @@ HTML_TEMPLATE = """
       max-height: 80vh;
       overflow-y: auto;
   }
-  #control-panel { 
-      right: 280px; /* تم تعديله ليكون على اليسار مع مسافة من لوحة الأسماء */
-  }
-  #device-names-panel { 
-      right: 10px; /* تم تعديله ليكون في أقصى اليمين */
-  }
   .device-label {
       font-weight: bold;
-      padding: 2px 8px;
+      padding: 2px 5px; /* تصغير الحجم */
       border-radius: 4px;
       font-size: 12px;
       white-space: nowrap;
@@ -45,9 +42,15 @@ HTML_TEMPLATE = """
       text-align: center;
       border: 1px solid #ddd;
       box-shadow: 0 1px 2px rgba(0,0,0,0.07);
-      background-color: #007bff;
       display: inline-block;
       user-select: none;
+      min-width: 60px; /* تحديد عرض ثابت */
+  }
+  .device-label.active {
+      background-color: #28a745; /* أخضر للأجهزة النشطة */
+  }
+  .device-label.inactive {
+      background-color: #dc3545; /* أحمر للأجهزة غير النشطة */
   }
   #rename-form {
       margin-top: 15px;
@@ -89,9 +92,11 @@ HTML_TEMPLATE = """
       justify-content: space-between;
       align-items: center;
   }
+  .device-list-item.active {
+      color: #000;
+  }
   .device-list-item.inactive {
-      color: #888;
-      font-style: italic;
+      color: #dc3545; /* أحمر للأجهزة غير النشطة */
   }
   .delete-btn {
       background: #dc3545;
@@ -111,6 +116,7 @@ HTML_TEMPLATE = """
 <button id="show-names-btn">عرض أسماء الأجهزة</button>
 
 <div id="passcode-popup">
+    <button class="close-passcode" onclick="document.getElementById('passcode-popup').style.display='none'">×</button>
     <label for="passcode-input" style="display:block; margin-bottom:8px;">أدخل كود الدخول:</label>
     <input type="password" id="passcode-input" style="width: 100%; padding: 8px; margin-bottom: 10px;" placeholder="كود الدخول" />
     <button id="passcode-submit" style="
@@ -128,7 +134,7 @@ HTML_TEMPLATE = """
 <div id="control-panel">
     <h2>
         إدارة الأجهزة
-        <button id="close-control">إغلاق</button>
+        <button id="close-control" style="float: left; background: #dc3545; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer;">إغلاق</button>
     </h2>
     <div id="device-list"></div>
     <div id="rename-form">
@@ -157,6 +163,13 @@ HTML_TEMPLATE = """
     const deviceMarkers = {};
     const deviceLabels = {};
 
+    function isDeviceActive(deviceData) {
+        if (!deviceData.last_update) return false;
+        const lastUpdate = new Date(deviceData.last_update);
+        const now = new Date();
+        return (now - lastUpdate) < (1 * 60 * 1000); // تغيير إلى 1 دقيقة
+    }
+
     function initMap() {
         map = L.map('map').setView([35.389062, -1.0950887], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -183,6 +196,7 @@ HTML_TEMPLATE = """
                 for (const [deviceId, deviceData] of Object.entries(devices)) {
                     if (deviceData.lat && deviceData.lon) {
                         const displayName = deviceData.custom_name || deviceId;
+                        const isActive = isDeviceActive(deviceData);
                         
                         if (!deviceMarkers[deviceId]) {
                             deviceMarkers[deviceId] = L.marker([deviceData.lat, deviceData.lon])
@@ -191,9 +205,9 @@ HTML_TEMPLATE = """
                             
                             deviceLabels[deviceId] = L.marker([deviceData.lat, deviceData.lon], {
                                 icon: L.divIcon({
-                                    className: 'device-label',
+                                    className: 'device-label ' + (isActive ? 'active' : 'inactive'),
                                     html: displayName,
-                                    iconSize: [70, 18]
+                                    iconSize: [null, 20] // جعل الارتفاع ثابتاً والعرض يتكيف مع المحتوى
                                 })
                             }).addTo(map);
                         } else {
@@ -201,7 +215,10 @@ HTML_TEMPLATE = """
                             deviceMarkers[deviceId].getPopup().setContent(`<b>${displayName}</b><br>الإحداثيات: ${deviceData.lat}, ${deviceData.lon}`);
                             deviceLabels[deviceId].setLatLng([deviceData.lat, deviceData.lon]);
                             const labelEl = deviceLabels[deviceId].getElement();
-                            if (labelEl) labelEl.innerHTML = displayName;
+                            if (labelEl) {
+                                labelEl.className = 'device-label ' + (isActive ? 'active' : 'inactive');
+                                labelEl.innerHTML = displayName;
+                            }
                         }
                     }
                 }
@@ -216,15 +233,16 @@ HTML_TEMPLATE = """
         
         for (const [deviceId, deviceData] of Object.entries(devices)) {
             const displayName = deviceData.custom_name || deviceId;
+            const isActive = isDeviceActive(deviceData);
             
             const item = document.createElement('div');
+            item.className = 'device-list-item ' + (isActive ? 'active' : 'inactive');
             item.textContent = displayName;
-            item.style.padding = '8px';
-            item.style.cursor = 'pointer';
-            item.style.borderBottom = '1px solid #eee';
             item.onclick = () => {
-                map.setView([deviceData.lat, deviceData.lon], 18);
-                if (deviceMarkers[deviceId]) deviceMarkers[deviceId].openPopup();
+                if (deviceData.lat && deviceData.lon) {
+                    map.setView([deviceData.lat, deviceData.lon], 18);
+                    if (deviceMarkers[deviceId]) deviceMarkers[deviceId].openPopup();
+                }
             };
             deviceList.appendChild(item);
             
@@ -241,11 +259,11 @@ HTML_TEMPLATE = """
         
         for (const [deviceId, deviceData] of Object.entries(devices)) {
             const displayName = deviceData.custom_name || deviceId;
+            const isActive = isDeviceActive(deviceData);
             
             const item = document.createElement('div');
+            item.className = 'device-list-item ' + (isActive ? 'active' : 'inactive');
             item.textContent = displayName;
-            item.style.padding = '7px 0';
-            item.style.borderBottom = '1px solid #eee';
             deviceNamesList.appendChild(item);
         }
         
@@ -284,11 +302,11 @@ HTML_TEMPLATE = """
 
         const adminBtn = document.getElementById('admin-btn');
         const passcodePopup = document.getElementById('passcode-popup');
-        const controlPanel = document.getElementById('control-panel');
         const passcodeInput = document.getElementById('passcode-input');
         const passcodeSubmit = document.getElementById('passcode-submit');
         const passcodeError = document.getElementById('passcode-error');
         const closeControlBtn = document.getElementById('close-control');
+        const showNamesBtn = document.getElementById('show-names-btn');
 
         adminBtn.addEventListener('click', () => {
             passcodePopup.style.display = 'block';
@@ -298,7 +316,7 @@ HTML_TEMPLATE = """
         passcodeSubmit.addEventListener('click', () => {
             const code = passcodeInput.value.trim();
             if (code === '1234560') {
-                controlPanel.style.display = 'block';
+                document.getElementById('control-panel').style.display = 'block';
                 passcodePopup.style.display = 'none';
                 adminBtn.style.display = 'none';
                 passcodeError.style.display = 'none';
@@ -315,14 +333,12 @@ HTML_TEMPLATE = """
         });
 
         closeControlBtn.addEventListener('click', () => {
-            controlPanel.style.display = 'none';
+            document.getElementById('control-panel').style.display = 'none';
             adminBtn.style.display = 'block';
         });
 
-        const showNamesBtn = document.getElementById('show-names-btn');
-        const deviceNamesPanel = document.getElementById('device-names-panel');
         showNamesBtn.addEventListener('click', () => {
-            deviceNamesPanel.style.display = 'block';
+            document.getElementById('device-names-panel').style.display = 'block';
             updateDevices();
         });
     });
