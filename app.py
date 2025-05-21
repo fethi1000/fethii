@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
-# تغيير وقت انتهاء صلاحية الإشارة إلى دقيقة واحدة
+# تعريف وقت انتهاء صلاحية الإشارة (دقيقة واحدة)
 INACTIVE_THRESHOLD = timedelta(minutes=1)
 devices = defaultdict(lambda: {'custom_name': None, 'last_update': None})
 
@@ -34,7 +34,7 @@ HTML_TEMPLATE = """
   }
   .device-label {
       font-weight: bold;
-      padding: 2px 5px; /* تصغير الحجم */
+      padding: 2px 5px;
       border-radius: 4px;
       font-size: 12px;
       white-space: nowrap;
@@ -44,13 +44,13 @@ HTML_TEMPLATE = """
       box-shadow: 0 1px 2px rgba(0,0,0,0.07);
       display: inline-block;
       user-select: none;
-      min-width: 60px; /* تحديد عرض ثابت */
+      min-width: 60px;
   }
   .device-label.active {
-      background-color: #28a745; /* أخضر للأجهزة النشطة */
+      background-color: #28a745;
   }
   .device-label.inactive {
-      background-color: #dc3545; /* أحمر للأجهزة غير النشطة */
+      background-color: #dc3545;
   }
   #rename-form {
       margin-top: 15px;
@@ -91,12 +91,16 @@ HTML_TEMPLATE = """
       display: flex;
       justify-content: space-between;
       align-items: center;
+      transition: background-color 0.2s;
+  }
+  .device-list-item:hover {
+      background-color: #f5f5f5;
   }
   .device-list-item.active {
       color: #000;
   }
   .device-list-item.inactive {
-      color: #dc3545; /* أحمر للأجهزة غير النشطة */
+      color: #dc3545;
   }
   .delete-btn {
       background: #dc3545;
@@ -167,7 +171,7 @@ HTML_TEMPLATE = """
         if (!deviceData.last_update) return false;
         const lastUpdate = new Date(deviceData.last_update);
         const now = new Date();
-        return (now - lastUpdate) < (1 * 60 * 1000); // تغيير إلى 1 دقيقة
+        return (now - lastUpdate) < (1 * 60 * 1000); // 1 دقيقة
     }
 
     function initMap() {
@@ -180,7 +184,6 @@ HTML_TEMPLATE = """
         fetch('/get_devices')
             .then(response => response.json())
             .then(devices => {
-                // إزالة علامات الأجهزة التي لم تعد موجودة
                 for (const deviceId in deviceMarkers) {
                     if (!devices[deviceId]) {
                         map.removeLayer(deviceMarkers[deviceId]);
@@ -207,7 +210,7 @@ HTML_TEMPLATE = """
                                 icon: L.divIcon({
                                     className: 'device-label ' + (isActive ? 'active' : 'inactive'),
                                     html: displayName,
-                                    iconSize: [null, 20] // جعل الارتفاع ثابتاً والعرض يتكيف مع المحتوى
+                                    iconSize: [null, 20]
                                 })
                             }).addTo(map);
                         } else {
@@ -264,6 +267,16 @@ HTML_TEMPLATE = """
             const item = document.createElement('div');
             item.className = 'device-list-item ' + (isActive ? 'active' : 'inactive');
             item.textContent = displayName;
+            
+            item.onclick = function() {
+                if (deviceData.lat && deviceData.lon) {
+                    map.setView([deviceData.lat, deviceData.lon], 18);
+                    if (deviceMarkers[deviceId]) {
+                        deviceMarkers[deviceId].openPopup();
+                    }
+                }
+            };
+            
             deviceNamesList.appendChild(item);
         }
         
