@@ -32,9 +32,15 @@ HTML_TEMPLATE = """
       max-height: 80vh;
       overflow-y: auto;
   }
+  .device-label-container {
+      position: absolute;
+      transform: translate(-50%, -100%);
+      text-align: center;
+      z-index: 1000;
+  }
   .device-label {
       font-weight: bold;
-      padding: 2px 5px;
+      padding: 2px 8px;
       border-radius: 4px;
       font-size: 12px;
       white-space: nowrap;
@@ -44,7 +50,7 @@ HTML_TEMPLATE = """
       box-shadow: 0 1px 2px rgba(0,0,0,0.07);
       display: inline-block;
       user-select: none;
-      min-width: 60px;
+      margin-bottom: 5px;
   }
   .device-label.active {
       background-color: #28a745;
@@ -180,6 +186,21 @@ HTML_TEMPLATE = """
         updateDevices();
     }
 
+    function createLabel(deviceId, deviceData, isActive) {
+        const displayName = deviceData.custom_name || deviceId;
+        const labelContainer = L.divIcon({
+            className: 'device-label-container',
+            html: `<div class="device-label ${isActive ? 'active' : 'inactive'}">${displayName}</div>`,
+            iconSize: [0, 0], // لا نحتاج لحجم لأننا نستخدم عنصر مطلق
+            iconAnchor: [0, 0]
+        });
+        
+        return L.marker([deviceData.lat, deviceData.lon], {
+            icon: labelContainer,
+            interactive: false // لا يستجيب للنقر
+        });
+    }
+
     function updateDevices() {
         fetch('/get_devices')
             .then(response => response.json())
@@ -198,30 +219,20 @@ HTML_TEMPLATE = """
 
                 for (const [deviceId, deviceData] of Object.entries(devices)) {
                     if (deviceData.lat && deviceData.lon) {
-                        const displayName = deviceData.custom_name || deviceId;
                         const isActive = isDeviceActive(deviceData);
                         
                         if (!deviceMarkers[deviceId]) {
                             deviceMarkers[deviceId] = L.marker([deviceData.lat, deviceData.lon])
                                 .addTo(map)
-                                .bindPopup(`<b>${displayName}</b><br>الإحداثيات: ${deviceData.lat}, ${deviceData.lon}`);
+                                .bindPopup(`<b>${deviceData.custom_name || deviceId}</b><br>الإحداثيات: ${deviceData.lat}, ${deviceData.lon}`);
                             
-                            deviceLabels[deviceId] = L.marker([deviceData.lat, deviceData.lon], {
-                                icon: L.divIcon({
-                                    className: 'device-label ' + (isActive ? 'active' : 'inactive'),
-                                    html: displayName,
-                                    iconSize: [null, 20]
-                                })
-                            }).addTo(map);
+                            deviceLabels[deviceId] = createLabel(deviceId, deviceData, isActive).addTo(map);
                         } else {
                             deviceMarkers[deviceId].setLatLng([deviceData.lat, deviceData.lon]);
-                            deviceMarkers[deviceId].getPopup().setContent(`<b>${displayName}</b><br>الإحداثيات: ${deviceData.lat}, ${deviceData.lon}`);
-                            deviceLabels[deviceId].setLatLng([deviceData.lat, deviceData.lon]);
-                            const labelEl = deviceLabels[deviceId].getElement();
-                            if (labelEl) {
-                                labelEl.className = 'device-label ' + (isActive ? 'active' : 'inactive');
-                                labelEl.innerHTML = displayName;
-                            }
+                            deviceMarkers[deviceId].getPopup().setContent(`<b>${deviceData.custom_name || deviceId}</b><br>الإحداثيات: ${deviceData.lat}, ${deviceData.lon}`);
+                            
+                            map.removeLayer(deviceLabels[deviceId]);
+                            deviceLabels[deviceId] = createLabel(deviceId, deviceData, isActive).addTo(map);
                         }
                     }
                 }
