@@ -117,13 +117,27 @@ HTML_TEMPLATE = """
       cursor: pointer;
       font-size: 12px;
   }
+  .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+  }
+  .button-group button {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      color: white;
+  }
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
 </head>
 <body>
 <div id="map"></div>
-<button id="admin-btn">إدارة الأجهزة</button>
-<button id="show-names-btn">عرض أسماء الأجهزة</button>
+<button id="admin-btn"><i class="fas fa-cog"></i> إدارة الأجهزة</button>
+<button id="show-names-btn"><i class="fas fa-list"></i> عرض أسماء الأجهزة</button>
 
 <div id="passcode-popup">
     <button class="close-passcode" onclick="document.getElementById('passcode-popup').style.display='none'">×</button>
@@ -137,37 +151,43 @@ HTML_TEMPLATE = """
         border: none;
         border-radius: 4px;
         cursor: pointer;
-    ">دخول</button>
+    "><i class="fas fa-sign-in-alt"></i> دخول</button>
     <div id="passcode-error" style="color: red; margin-top: 8px; display: none;">كود غير صحيح</div>
 </div>
 
 <div id="control-panel">
     <h2>
-        إدارة الأجهزة
-        <button id="close-control" style="float: left; background: #dc3545; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer;">إغلاق</button>
+        <i class="fas fa-cogs"></i> إدارة الأجهزة
+        <button id="close-control" style="float: left; background: #dc3545; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer;"><i class="fas fa-times"></i> إغلاق</button>
     </h2>
     <div id="device-list"></div>
     <div id="rename-form">
-        <h3>تغيير اسم الجهاز:</h3>
+        <h3><i class="fas fa-edit"></i> إدارة اسم الجهاز:</h3>
         <select id="device-select" style="width: 100%; padding: 8px; margin-bottom: 10px;">
             <option value="">اختر جهازاً</option>
         </select>
         <input type="text" id="new-name" placeholder="الاسم الجديد" style="width: 100%; padding: 8px; margin-bottom: 10px;" />
-        <button onclick="renameDevice()" style="width: 100%; padding: 10px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;">
-            تغيير الاسم
-        </button>
+        <div class="button-group">
+            <button onclick="renameDevice()" style="background: #4CAF50;">
+                <i class="fas fa-save"></i> تغيير الاسم
+            </button>
+            <button onclick="deleteDevice()" style="background: #dc3545;">
+                <i class="fas fa-trash"></i> حذف الجهاز
+            </button>
+        </div>
     </div>
 </div>
 
 <div id="device-names-panel">
-    <h3 style="margin-top: 0;">أسماء الأجهزة</h3>
+    <h3 style="margin-top: 0;"><i class="fas fa-list-ol"></i> أسماء الأجهزة</h3>
     <div id="device-names-list"></div>
     <button onclick="document.getElementById('device-names-panel').style.display='none';" style="margin-top:10px;width:100%;padding:8px;background:#dc3545;color:white;border:none;border-radius:4px;cursor:pointer;">
-        إغلاق
+        <i class="fas fa-times"></i> إغلاق
     </button>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
 <script>
     let map;
     const deviceMarkers = {};
@@ -191,13 +211,13 @@ HTML_TEMPLATE = """
         const labelContainer = L.divIcon({
             className: 'device-label-container',
             html: `<div class="device-label ${isActive ? 'active' : 'inactive'}">${displayName}</div>`,
-            iconSize: [0, 0], // لا نحتاج لحجم لأننا نستخدم عنصر مطلق
+            iconSize: [0, 0],
             iconAnchor: [0, 0]
         });
         
         return L.marker([deviceData.lat, deviceData.lon], {
             icon: labelContainer,
-            interactive: false // لا يستجيب للنقر
+            interactive: false
         });
     }
 
@@ -251,7 +271,12 @@ HTML_TEMPLATE = """
             
             const item = document.createElement('div');
             item.className = 'device-list-item ' + (isActive ? 'active' : 'inactive');
-            item.textContent = displayName;
+            item.innerHTML = `
+                <span>${displayName}</span>
+                <button class="delete-btn" onclick="event.stopPropagation(); confirmDeleteDevice('${deviceId}')">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `;
             item.onclick = () => {
                 if (deviceData.lat && deviceData.lon) {
                     map.setView([deviceData.lat, deviceData.lon], 18);
@@ -317,6 +342,55 @@ HTML_TEMPLATE = """
             } else {
                 alert('حدث خطأ: ' + data.message);
             }
+        });
+    }
+
+    function confirmDeleteDevice(deviceId) {
+        const deviceData = devices[deviceId];
+        const displayName = deviceData?.custom_name || deviceId;
+        
+        if (!confirm(`هل أنت متأكد من حذف الجهاز "${displayName}"؟ هذا الإجراء لا يمكن التراجع عنه.`)) {
+            return;
+        }
+        
+        deleteDevice(deviceId);
+    }
+
+    function deleteDevice(deviceId = null) {
+        if (!deviceId) {
+            deviceId = document.getElementById('device-select').value;
+        }
+        
+        if (!deviceId) {
+            alert('الرجاء اختيار جهاز للحذف');
+            return;
+        }
+        
+        fetch('/delete_device', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_id: deviceId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // حذف العلامة من الخريطة فوراً
+                if (deviceMarkers[deviceId]) {
+                    map.removeLayer(deviceMarkers[deviceId]);
+                    map.removeLayer(deviceLabels[deviceId]);
+                    delete deviceMarkers[deviceId];
+                    delete deviceLabels[deviceId];
+                }
+                
+                alert('تم حذف الجهاز بنجاح');
+                updateDevices();
+            } else {
+                alert('حدث خطأ: ' + data.message);
+            }
+        })
+        .catch(error => {
+            alert('حدث خطأ في الاتصال بالخادم');
+            console.error('Error:', error);
         });
     }
 
@@ -418,6 +492,24 @@ def rename_device():
         return jsonify({'success': False, 'message': 'الجهاز غير موجود'}), 404
     except Exception as e:
         print(f"خطأ في تغيير الاسم: {str(e)}")
+        return jsonify({'success': False, 'message': 'حدث خطأ في الخادم'}), 500
+
+@app.route('/delete_device', methods=['POST'])
+def delete_device():
+    try:
+        data = request.get_json()
+        device_id = data.get('device_id')
+        if not device_id:
+            return jsonify({'success': False, 'message': 'بيانات ناقصة'}), 400
+        
+        if device_id in devices:
+            del devices[device_id]
+            print(f"تم حذف الجهاز {device_id} بنجاح")
+            return jsonify({'success': True})
+        
+        return jsonify({'success': False, 'message': 'الجهاز غير موجود'}), 404
+    except Exception as e:
+        print(f"خطأ في حذف الجهاز: {str(e)}")
         return jsonify({'success': False, 'message': 'حدث خطأ في الخادم'}), 500
 
 @app.route('/get_devices', methods=['GET'])
