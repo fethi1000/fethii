@@ -1,6 +1,7 @@
 from flask import Flask, request, render_template_string, jsonify
 from collections import defaultdict
 from datetime import datetime, timedelta
+import pytz
 
 app = Flask(__name__)
 
@@ -193,6 +194,27 @@ HTML_TEMPLATE = """
     const deviceMarkers = {};
     const deviceLabels = {};
 
+    function formatDateTime(dateStr) {
+        if (!dateStr) return 'غير متوفر';
+        
+        try {
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return 'تاريخ غير صالح';
+            
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            
+            return `${day}/${month}/${year} - ${hours}:${minutes}:${seconds}`;
+        } catch (e) {
+            console.error('Error formatting date:', e);
+            return 'تاريخ غير صالح';
+        }
+    }
+
     function isDeviceActive(deviceData) {
         if (!deviceData.last_update) return false;
         const lastUpdate = new Date(deviceData.last_update);
@@ -240,16 +262,18 @@ HTML_TEMPLATE = """
                 for (const [deviceId, deviceData] of Object.entries(devices)) {
                     if (deviceData.lat && deviceData.lon) {
                         const isActive = isDeviceActive(deviceData);
+                        const displayName = deviceData.custom_name || deviceId;
+                        const lastUpdate = formatDateTime(deviceData.last_update);
                         
                         if (!deviceMarkers[deviceId]) {
                             deviceMarkers[deviceId] = L.marker([deviceData.lat, deviceData.lon])
                                 .addTo(map)
-                                .bindPopup(`<b>${deviceData.custom_name || deviceId}</b><br>الإحداثيات: ${deviceData.lat}, ${deviceData.lon}`);
+                                .bindPopup(`<b>${displayName}</b><br>آخر تحديث: ${lastUpdate}`);
                             
                             deviceLabels[deviceId] = createLabel(deviceId, deviceData, isActive).addTo(map);
                         } else {
                             deviceMarkers[deviceId].setLatLng([deviceData.lat, deviceData.lon]);
-                            deviceMarkers[deviceId].getPopup().setContent(`<b>${deviceData.custom_name || deviceId}</b><br>الإحداثيات: ${deviceData.lat}, ${deviceData.lon}`);
+                            deviceMarkers[deviceId].getPopup().setContent(`<b>${displayName}</b><br>آخر تحديث: ${lastUpdate}`);
                             
                             map.removeLayer(deviceLabels[deviceId]);
                             deviceLabels[deviceId] = createLabel(deviceId, deviceData, isActive).addTo(map);
@@ -462,6 +486,9 @@ def update_device():
             return jsonify({'status': 'error', 'message': 'يجب إرسال معرف الجهاز والإحداثيات'}), 400
         if devices[device_id]['custom_name'] is None:
             devices[device_id]['custom_name'] = device_id
+        
+        # الحصول على الوقت الحالي بتوقيت UTC وإضافة معلومات المنطقة الزمنية
+        now_utc = datetime.utcnow()
         devices[device_id].update({
             'lat': float(lat),
             'lon': float(lon),
@@ -469,7 +496,7 @@ def update_device():
             'battery': data.get('batt'),
             'speed': data.get('speed'),
             'accuracy': data.get('accuracy'),
-            'last_update': datetime.utcnow().isoformat() + 'Z'
+            'last_update': now_utc.isoformat() + 'Z'  # ISO format with Z for UTC
         })
         print(f"تم تحديث بيانات الجهاز {device_id}: ({lat}, {lon})")
         return jsonify({'status': 'success'})
