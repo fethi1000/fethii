@@ -64,7 +64,7 @@ HTML_TEMPLATE = """
       padding-top: 15px;
       border-top: 1px solid #eee;
   }
-  #admin-btn, #show-names-btn {
+  #admin-btn, #show-names-btn, #locate-me-btn {
       position: absolute;
       top: 10px;
       z-index: 1200;
@@ -79,6 +79,7 @@ HTML_TEMPLATE = """
   }
   #admin-btn { right: 10px; }
   #show-names-btn { right: 140px; background: #28a745; }
+  #locate-me-btn { right: 270px; background: #ffc107; color: #000; }
   #passcode-popup {
       display: none;
       position: absolute;
@@ -131,6 +132,14 @@ HTML_TEMPLATE = """
       cursor: pointer;
       color: white;
   }
+  .user-location-marker {
+      background-color: #4285F4;
+      border-radius: 50%;
+      border: 2px solid white;
+      width: 20px !important;
+      height: 20px !important;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+  }
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
@@ -139,6 +148,7 @@ HTML_TEMPLATE = """
 <div id="map"></div>
 <button id="admin-btn"><i class="fas fa-cog"></i> إدارة الأجهزة</button>
 <button id="show-names-btn"><i class="fas fa-list"></i> عرض أسماء الأجهزة</button>
+<button id="locate-me-btn"><i class="fas fa-location-arrow"></i> موقعي الحالي</button>
 
 <div id="passcode-popup">
     <button class="close-passcode" onclick="document.getElementById('passcode-popup').style.display='none'">×</button>
@@ -193,6 +203,8 @@ HTML_TEMPLATE = """
     let map;
     const deviceMarkers = {};
     const deviceLabels = {};
+    let userLocationMarker = null;
+    let watchId = null;
 
     function formatDateTime(dateStr) {
         if (!dateStr) return 'غير متوفر';
@@ -418,6 +430,76 @@ HTML_TEMPLATE = """
         });
     }
 
+    function locateUser() {
+        const locateBtn = document.getElementById('locate-me-btn');
+        
+        if (watchId) {
+            // إذا كان التتبع نشطاً، أوقفه
+            navigator.geolocation.clearWatch(watchId);
+            watchId = null;
+            
+            if (userLocationMarker) {
+                map.removeLayer(userLocationMarker);
+                userLocationMarker = null;
+            }
+            
+            locateBtn.innerHTML = '<i class="fas fa-location-arrow"></i> موقعي الحالي';
+            locateBtn.style.backgroundColor = '#ffc107';
+            locateBtn.style.color = '#000';
+            return;
+        }
+        
+        if (!navigator.geolocation) {
+            alert('متصفحك لا يدعم خدمة تحديد الموقع');
+            return;
+        }
+        
+        locateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري التتبع...';
+        locateBtn.style.backgroundColor = '#007bff';
+        locateBtn.style.color = '#fff';
+        
+        // إنشاء علامة للمستخدم
+        const userIcon = L.divIcon({
+            className: 'user-location-marker',
+            iconSize: [20, 20]
+        });
+        
+        watchId = navigator.geolocation.watchPosition(
+            (position) => {
+                const { latitude, longitude } = position.coords;
+                
+                if (!userLocationMarker) {
+                    userLocationMarker = L.marker([latitude, longitude], {
+                        icon: userIcon,
+                        zIndexOffset: 1000
+                    }).addTo(map)
+                    .bindPopup('<b>موقعك الحالي</b>');
+                } else {
+                    userLocationMarker.setLatLng([latitude, longitude]);
+                }
+                
+                // تكبير الخريطة على الموقع الحالي
+                map.setView([latitude, longitude], 17);
+                
+                locateBtn.innerHTML = '<i class="fas fa-location-arrow"></i> إيقاف التتبع';
+            },
+            (error) => {
+                console.error('Error getting location:', error);
+                alert('حدث خطأ في الحصول على الموقع: ' + error.message);
+                
+                locateBtn.innerHTML = '<i class="fas fa-location-arrow"></i> موقعي الحالي';
+                locateBtn.style.backgroundColor = '#ffc107';
+                locateBtn.style.color = '#000';
+                watchId = null;
+            },
+            {
+                enableHighAccuracy: true,
+                maximumAge: 10000,
+                timeout: 5000
+            }
+        );
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         initMap();
         setInterval(updateDevices, 3000);
@@ -429,6 +511,7 @@ HTML_TEMPLATE = """
         const passcodeError = document.getElementById('passcode-error');
         const closeControlBtn = document.getElementById('close-control');
         const showNamesBtn = document.getElementById('show-names-btn');
+        const locateMeBtn = document.getElementById('locate-me-btn');
 
         adminBtn.addEventListener('click', () => {
             passcodePopup.style.display = 'block';
@@ -463,6 +546,8 @@ HTML_TEMPLATE = """
             document.getElementById('device-names-panel').style.display = 'block';
             updateDevices();
         });
+
+        locateMeBtn.addEventListener('click', locateUser);
     });
 </script>
 </body>
