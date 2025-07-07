@@ -140,6 +140,20 @@ HTML_TEMPLATE = """
       height: 20px !important;
       box-shadow: 0 2px 5px rgba(0,0,0,0.3);
   }
+  #permission-popup {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 2000;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      text-align: center;
+      max-width: 80%;
+  }
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
@@ -149,6 +163,16 @@ HTML_TEMPLATE = """
 <button id="admin-btn"><i class="fas fa-cog"></i> إدارة الأجهزة</button>
 <button id="show-names-btn"><i class="fas fa-list"></i> عرض أسماء الأجهزة</button>
 <button id="locate-me-btn"><i class="fas fa-location-arrow"></i> موقعي الحالي</button>
+
+<!-- نافذة طلب إذن الوصول إلى الموقع -->
+<div id="permission-popup">
+    <h3>السماح بالوصول إلى موقعك</h3>
+    <p>يحتاج التطبيق إلى إذن للوصول إلى موقعك الحالي لتحديده على الخريطة.</p>
+    <div class="button-group">
+        <button id="grant-permission-btn" style="background: #28a745;">السماح</button>
+        <button id="deny-permission-btn" style="background: #dc3545;">رفض</button>
+    </div>
+</div>
 
 <div id="passcode-popup">
     <button class="close-passcode" onclick="document.getElementById('passcode-popup').style.display='none'">×</button>
@@ -205,6 +229,13 @@ HTML_TEMPLATE = """
     const deviceLabels = {};
     let userLocationMarker = null;
     let watchId = null;
+    let isAndroidApp = false;
+
+    // اكتشاف إذا كان التطبيق يعمل داخل WebView في Android
+    function detectAndroidApp() {
+        const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+        return /android/i.test(userAgent) && /wv|webview/i.test(userAgent.toLowerCase());
+    }
 
     function formatDateTime(dateStr) {
         if (!dateStr) return 'غير متوفر';
@@ -238,6 +269,10 @@ HTML_TEMPLATE = """
         map = L.map('map').setView([35.389062, -1.0950887], 15);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         updateDevices();
+        
+        // اكتشاف إذا كان التطبيق يعمل داخل WebView في Android
+        isAndroidApp = detectAndroidApp();
+        console.log('Is Android WebView:', isAndroidApp);
     }
 
     function createLabel(deviceId, deviceData, isActive) {
@@ -430,6 +465,30 @@ HTML_TEMPLATE = """
         });
     }
 
+    function requestLocationPermission() {
+        return new Promise((resolve, reject) => {
+            if (!isAndroidApp) {
+                // إذا لم يكن تطبيق Android، استخدم API المتصفح العادي
+                resolve();
+                return;
+            }
+
+            // عرض نافذة طلب الإذن للمستخدم
+            const permissionPopup = document.getElementById('permission-popup');
+            permissionPopup.style.display = 'block';
+
+            document.getElementById('grant-permission-btn').onclick = function() {
+                permissionPopup.style.display = 'none';
+                resolve();
+            };
+
+            document.getElementById('deny-permission-btn').onclick = function() {
+                permissionPopup.style.display = 'none';
+                reject(new Error('تم رفض الإذن من قبل المستخدم'));
+            };
+        });
+    }
+
     function locateUser() {
         const locateBtn = document.getElementById('locate-me-btn');
         
@@ -464,40 +523,69 @@ HTML_TEMPLATE = """
             iconSize: [20, 20]
         });
         
-        watchId = navigator.geolocation.watchPosition(
-            (position) => {
-                const { latitude, longitude } = position.coords;
-                
-                if (!userLocationMarker) {
-                    userLocationMarker = L.marker([latitude, longitude], {
-                        icon: userIcon,
-                        zIndexOffset: 1000
-                    }).addTo(map)
-                    .bindPopup('<b>موقعك الحالي</b>');
-                } else {
-                    userLocationMarker.setLatLng([latitude, longitude]);
-                }
-                
-                // تكبير الخريطة على الموقع الحالي
-                map.setView([latitude, longitude], 17);
-                
-                locateBtn.innerHTML = '<i class="fas fa-location-arrow"></i> إيقاف التتبع';
-            },
-            (error) => {
-                console.error('Error getting location:', error);
-                alert('حدث خطأ في الحصول على الموقع: ' + error.message);
+        // طلب إذن الوصول إلى الموقع
+        requestLocationPermission()
+            .then(() => {
+                watchId = navigator.geolocation.watchPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+                        
+                        if (!userLocationMarker) {
+                            userLocationMarker = L.marker([latitude, longitude], {
+                                icon: userIcon,
+                                zIndexOffset: 1000
+                            }).addTo(map)
+                            .bindPopup('<b>موقعك الحالي</b>');
+                        } else {
+                            userLocationMarker.setLatLng([latitude, longitude]);
+                        }
+                        
+                        // تكبير الخريطة على الموقع الحالي
+                        map.setView([latitude, longitude], 17);
+                        
+                        locateBtn.innerHTML = '<i class="fas fa-location-arrow"></i> إيقاف التتبع';
+                    },
+                    (error) => {
+                        console.error('Error getting location:', error);
+                        let errorMessage = 'حدث خطأ في الحصول على الموقع';
+                        
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED:
+                                errorMessage = 'تم رفض إذن الوصول إلى الموقع';
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                errorMessage = 'معلومات الموقع غير متوفرة';
+                                break;
+                            case error.TIMEOUT:
+                                errorMessage = 'انتهت مهلة طلب الموقع';
+                                break;
+                            case error.UNKNOWN_ERROR:
+                                errorMessage = 'حدث خطأ غير معروف';
+                                break;
+                        }
+                        
+                        alert(errorMessage);
+                        
+                        locateBtn.innerHTML = '<i class="fas fa-location-arrow"></i> موقعي الحالي';
+                        locateBtn.style.backgroundColor = '#ffc107';
+                        locateBtn.style.color = '#000';
+                        watchId = null;
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        maximumAge: 10000,
+                        timeout: 15000
+                    }
+                );
+            })
+            .catch(error => {
+                console.error('Permission error:', error);
+                alert('لا يمكن تحديد الموقع بدون إذن الوصول');
                 
                 locateBtn.innerHTML = '<i class="fas fa-location-arrow"></i> موقعي الحالي';
                 locateBtn.style.backgroundColor = '#ffc107';
                 locateBtn.style.color = '#000';
-                watchId = null;
-            },
-            {
-                enableHighAccuracy: true,
-                maximumAge: 10000,
-                timeout: 5000
-            }
-        );
+            });
     }
 
     document.addEventListener('DOMContentLoaded', () => {
