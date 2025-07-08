@@ -526,6 +526,15 @@ HTML_TEMPLATE = """
         // طلب إذن الوصول إلى الموقع
         requestLocationPermission()
             .then(() => {
+                // في تطبيق Android، نحتاج إلى استخدام جافا سكريبت للاتصال بالكود الأصلي
+                if (isAndroidApp && window.AndroidInterface) {
+                    try {
+                        window.AndroidInterface.requestLocationPermission();
+                    } catch (e) {
+                        console.error('Error calling Android interface:', e);
+                    }
+                }
+                
                 watchId = navigator.geolocation.watchPosition(
                     (position) => {
                         const { latitude, longitude } = position.coords;
@@ -637,6 +646,12 @@ HTML_TEMPLATE = """
 
         locateMeBtn.addEventListener('click', locateUser);
     });
+
+    // دالة يمكن استدعاؤها من تطبيق Android بعد منح الإذن
+    function onLocationPermissionGranted() {
+        console.log('Location permission granted by Android app');
+        // يمكنك تنفيذ أي إجراء إضافي هنا إذا لزم الأمر
+    }
 </script>
 </body>
 </html>
